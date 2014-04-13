@@ -2,10 +2,12 @@ package com.agentwaj.speedread;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.view.MotionEvent;
@@ -22,6 +24,9 @@ import com.google.android.glass.widget.CardScrollView;
 
 public class SpeedRead extends Activity {
 	
+	//
+	SharedPreferences mPrefs;
+	
 	// Holds the different cards of this immersion
 	private List<Card> mCards;
 	
@@ -35,8 +40,14 @@ public class SpeedRead extends Activity {
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		
+		mPrefs = getSharedPreferences("mPrefs", MODE_PRIVATE);
+		List<String> savedStories = new ArrayList<String>();
+		for (Map.Entry<String, ?> entry : mPrefs.getAll().entrySet()) {
+			savedStories.add(entry.getKey());
+		}
+		
 		// Create cards for this immersion
-		createCards();
+		createCards(savedStories);
 		
 		// Link the cards to the scroll view then display the scroll view
 		mCardScrollView = new CardScrollView(this);
@@ -54,7 +65,7 @@ public class SpeedRead extends Activity {
 	/*
 	 * Creates the array of cards to be used for this immersion
 	 */
-	private void createCards() {
+	private void createCards(List<String> savedStories) {
 		mCards = new ArrayList<Card>();
 		
 		Card card = new Card(this);
@@ -65,9 +76,11 @@ public class SpeedRead extends Activity {
 		card.setText("Capture");
 		mCards.add(card);
 		
-		card = new Card(this);
-		card.setText("Story 1");
-		mCards.add(card);
+		for (String story : savedStories) {
+			card = new Card(this);
+			card.setText(story);
+			mCards.add(card);
+		}
 	}
 
 	/*
@@ -90,7 +103,7 @@ public class SpeedRead extends Activity {
 					startActivityForResult(i, 1);
 					break;
 				default: // Stories
-					Toast.makeText(SpeedRead.this, "Story " + position, Toast.LENGTH_SHORT).show();
+					Toast.makeText(SpeedRead.this, "Story " + (position - 1), Toast.LENGTH_SHORT).show();
 				}
 				return true;
 			}
@@ -102,6 +115,7 @@ public class SpeedRead extends Activity {
 	@Override
 	protected void onActivityResult(int requestCode, int resultCode, Intent data) {
 		if (requestCode == 1 && resultCode == RESULT_OK) {
+			mPrefs.edit().putString(System.currentTimeMillis() + "", "test").commit();
 			Toast.makeText(SpeedRead.this, "SUCCESS BUDDY!", Toast.LENGTH_SHORT).show();
 		}
 		

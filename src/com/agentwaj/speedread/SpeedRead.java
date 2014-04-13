@@ -24,7 +24,7 @@ import com.google.android.glass.widget.CardScrollView;
 
 public class SpeedRead extends Activity {
 	
-	//
+	// Shared prefs for local storage of saved stories
 	SharedPreferences mPrefs;
 	
 	// Holds the different cards of this immersion
@@ -40,6 +40,7 @@ public class SpeedRead extends Activity {
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		
+		// Retrieve all saved stories
 		mPrefs = getSharedPreferences("mPrefs", MODE_PRIVATE);
 		List<String> savedStories = new ArrayList<String>();
 		for (Map.Entry<String, ?> entry : mPrefs.getAll().entrySet()) {
@@ -103,20 +104,24 @@ public class SpeedRead extends Activity {
 					startActivityForResult(i, 1);
 					break;
 				default: // Stories
-					Toast.makeText(SpeedRead.this, "Story " + (position - 1), Toast.LENGTH_SHORT).show();
+					Toast.makeText(SpeedRead.this, mCards.get(position).getText(), Toast.LENGTH_SHORT).show();
+					mPrefs.edit().remove(mCards.get(position).getText()).commit();
+					mCards.remove(mCards.get(position));
 				}
 				return true;
 			}
 		});
-
+		
 		return gestureDetector;
 	}
 	
 	@Override
 	protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-		if (requestCode == 1 && resultCode == RESULT_OK) {
+		if (requestCode == 1 && resultCode == RESULT_OK && mPrefs != null) {
 			mPrefs.edit().putString(System.currentTimeMillis() + "", "test").commit();
 			Toast.makeText(SpeedRead.this, "SUCCESS BUDDY!", Toast.LENGTH_SHORT).show();
+		} else {
+			Toast.makeText(SpeedRead.this, "Bummer!", Toast.LENGTH_SHORT).show();
 		}
 		
 		super.onActivityResult(requestCode, resultCode, data);

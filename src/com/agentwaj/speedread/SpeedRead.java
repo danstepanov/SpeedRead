@@ -5,7 +5,9 @@ import java.util.List;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -41,20 +43,69 @@ public class SpeedRead extends Activity {
 		CustomCardScrollAdapter adapter = new CustomCardScrollAdapter();
 		mCardScrollView.setAdapter(adapter);
 		mCardScrollView.activate();
+		// Capture is initial screen, settings to left and stories to right
+		mCardScrollView.setSelection(1);
 		setContentView(mCardScrollView);
 
 		// Creates the gesture detector to listen for gesture events
 		mGestureDetector = createGestureDetector(this);
 	}
 	
+	/*
+	 * Creates the array of cards to be used for this immersion
+	 */
 	private void createCards() {
 		mCards = new ArrayList<Card>();
 		
-		for (int i = 0; i < 5; i++) {
-			Card card = new Card(this);
-			card.setText("Num " + (i +  1));
-			mCards.add(card);
+		Card card = new Card(this);
+		card.setText("Settings");
+		mCards.add(card);
+		
+		card = new Card(this);
+		card.setText("Capture");
+		mCards.add(card);
+		
+		card = new Card(this);
+		card.setText("Story 1");
+		mCards.add(card);
+	}
+
+	/*
+	 * The gesture detector that listens for gesture events
+	 */
+	private GestureDetector createGestureDetector(Context context) {
+		GestureDetector gestureDetector = new GestureDetector(context);
+		// Create a base listener for generic gestures
+		gestureDetector.setBaseListener(new BaseListener() {
+
+			@Override
+			public boolean onGesture(Gesture gesture) {
+				int position = mCardScrollView.getSelectedItemPosition();
+				switch (position) {
+				case 0: // Settings
+					Toast.makeText(SpeedRead.this, "Coming soon!", Toast.LENGTH_SHORT).show();
+					break;
+				case 1: // Capture
+					Intent i = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+					startActivityForResult(i, 1);
+					break;
+				default: // Stories
+					Toast.makeText(SpeedRead.this, "Story " + position, Toast.LENGTH_SHORT).show();
+				}
+				return true;
+			}
+		});
+
+		return gestureDetector;
+	}
+	
+	@Override
+	protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+		if (requestCode == 1 && resultCode == RESULT_OK) {
+			Toast.makeText(SpeedRead.this, "SUCCESS BUDDY!", Toast.LENGTH_SHORT).show();
 		}
+		
+		super.onActivityResult(requestCode, resultCode, data);
 	}
 	
 	/*
@@ -86,24 +137,6 @@ public class SpeedRead extends Activity {
 		public View getView(int position, View convertView, ViewGroup parent) {
 			return mCards.get(position).toView();
 		}
-	}
-
-	/*
-	 * The gesture detector that listens for gesture events
-	 */
-	private GestureDetector createGestureDetector(Context context) {
-		GestureDetector gestureDetector = new GestureDetector(context);
-		// Create a base listener for generic gestures
-		gestureDetector.setBaseListener(new BaseListener() {
-
-			@Override
-			public boolean onGesture(Gesture gesture) {
-				Toast.makeText(SpeedRead.this, "Toasty.", Toast.LENGTH_SHORT).show();
-				return true;
-			}
-		});
-
-		return gestureDetector;
 	}
 
 	/*

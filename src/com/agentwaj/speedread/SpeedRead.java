@@ -1,25 +1,34 @@
 package com.agentwaj.speedread;
 
-import java.io.File;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URI;
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
+
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.json.JSONObject;
 
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.os.AsyncTask;
 import android.os.Bundle;
-import android.os.FileObserver;
-import android.provider.MediaStore;
+import android.speech.RecognizerIntent;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Toast;
 
 import com.google.android.glass.app.Card;
-import com.google.android.glass.media.CameraManager;
 import com.google.android.glass.touchpad.Gesture;
 import com.google.android.glass.touchpad.GestureDetector;
 import com.google.android.glass.touchpad.GestureDetector.BaseListener;
@@ -27,6 +36,8 @@ import com.google.android.glass.widget.CardScrollAdapter;
 import com.google.android.glass.widget.CardScrollView;
 
 public class SpeedRead extends Activity {
+	
+	public static final String PREFS = "com.agentwaj.speedread.preferences";
 	
 	// Shared prefs for local storage of saved stories
 	SharedPreferences mPrefs;
@@ -37,6 +48,7 @@ public class SpeedRead extends Activity {
 	// Allows for horizontal scrolling between cards
 	private CardScrollView mCardScrollView;
 	
+	// Links cards array to scroll view
 	private CustomCardScrollAdapter mAdapter;
 	
 	// Handles gesture input
@@ -47,7 +59,7 @@ public class SpeedRead extends Activity {
 		super.onCreate(savedInstanceState);
 		
 		// Retrieve all saved stories
-		mPrefs = getSharedPreferences("mPrefs", MODE_PRIVATE);
+		mPrefs = getSharedPreferences(PREFS, MODE_PRIVATE);
 		List<String> savedStories = new ArrayList<String>();
 		for (Map.Entry<String, ?> entry : mPrefs.getAll().entrySet()) {
 			savedStories.add(entry.getKey());
@@ -80,7 +92,12 @@ public class SpeedRead extends Activity {
 		mCards.add(card);
 		
 		card = new Card(this);
-		card.setText("Capture");
+		card.setText("ENG -> LIT");
+		mCards.add(card);
+		
+		
+		card = new Card(this);
+		card.setText("LIT -> ENG");
 		mCards.add(card);
 		
 		for (String story : savedStories) {
@@ -107,10 +124,20 @@ public class SpeedRead extends Activity {
 					Toast.makeText(SpeedRead.this, "Coming soon!", Toast.LENGTH_SHORT).show();
 					break;
 				case 1: // Capture
-					Intent i = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+					Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+					i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, "en-US");
 					startActivityForResult(i, 1);
 					break;
+				case 2: // Capture
+					i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+					i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, "lt");
+					startActivityForResult(i, 2);
+					break;
 				default: // Stories
+//					Intent intent = new Intent(SpeedRead.this, ReadStory.class);
+//					intent.putExtra("title", mCards.get(position).getText());
+//					startActivity(intent);
+					
 					// Remove a card from the immersion
 					mPrefs.edit().remove(mCards.get(position).getText()).commit();
 					mCards.remove(mCards.get(position));
@@ -126,67 +153,92 @@ public class SpeedRead extends Activity {
 	@Override
 	protected void onActivityResult(int requestCode, int resultCode, Intent data) {
 		// Process a picture once it is ready
-		if (requestCode == 1 && resultCode == RESULT_OK && mPrefs != null) {
-			String picturePath = data.getStringExtra(CameraManager.EXTRA_PICTURE_FILE_PATH);
-			processPictureWhenReady(picturePath);
+		if (resultCode == RESULT_OK && mPrefs != null) {
+			ArrayList<String> words = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+			String[] y = words.get(0).split(" ");
+			String result = "";
+			for (String word : y) {
+				try {
+					String x = requestCode == 1 ? 
+							new TranslateTask().execute("eng", "lit", word).get() :
+								new TranslateTask().execute("lit", "eng", word).get();
+					result += x + " ";
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+			
+			mCards.add(new Card(this).setText(result));
 			mAdapter.notifyDataSetChanged();
+//			mPrefs.edit().putString(result, "").commit();
+//			mCards.add(new Card(this).setText(result));
+//			mAdapter.notifyDataSetChanged();
 		}
 		
 		super.onActivityResult(requestCode, resultCode, data);
 	}
 	
-	/*
-	 * Process a picture once it is ready
-	 */
-	private void processPictureWhenReady(final String picturePath) {
-		final File pictureFile = new File(picturePath);
-		
-		if (pictureFile.exists()) {
-			// The picture is ready; process it.
-			
-			// Save a card
-			Calendar c = Calendar.getInstance();
-			String time = c.get(Calendar.MONTH) + "/" + 
-					c.get(Calendar.DATE) + ", " + 
-					c.get(Calendar.HOUR_OF_DAY) + ":" + 
-					c.get(Calendar.MINUTE);
-			mPrefs.edit().putString(time, "Rest of text").commit();
-			mCards.add(new Card(this).setText(time).setFootnote("Story"));
-			mAdapter.notifyDataSetChanged();
-		} else {
-			// The file does not exist yet.
-			final File parentDirectory = pictureFile.getParentFile();
-			FileObserver observer = new FileObserver(parentDirectory.getPath()) {
+	private class TranslateTask extends AsyncTask<String, Void, String> {
+
+		@Override
+		protected String doInBackground(String... params) {
+			try {
+				HttpClient client = new DefaultHttpClient();
+				HttpGet request = new HttpGet();
+				URI website = new URI("http://glosbe.com/gapi/translate?format=json&pretty=true&from=" + params[0] + "&dest=" + params[1] + "&phrase=" + params[2]);
+				request.setURI(website);
+				HttpResponse response = client.execute(request);
+				InputStream in = response.getEntity().getContent();
 				
-				// Protect against additional pending events after CLOSE_WRITE is handled.
-				private boolean isFileWritten;
+				String result = convertStreamToString(in);
 				
-				@Override
-				public void onEvent(int event, String path) {
-					if (!isFileWritten) {
-						// For safety, make sure that the file was created in 
-						// the directory is actually the one we're expecting.
-						File affectedFile = new File(parentDirectory, path);
-						isFileWritten = (event == FileObserver.CLOSE_WRITE 
-								&& affectedFile.equals(pictureFile));
-						
-						if (isFileWritten) {
-							stopWatching();
-							
-							// Now that the file is ready, recursively call 
-							// processPictureWhenReady again (on the UI thread).
-							runOnUiThread(new Runnable() {
-								@Override
-								public void run() {
-									processPictureWhenReady(picturePath);
-								}
-							});
-						}
-					}
+				JSONObject obj = new JSONObject(result);
+				try {
+				JSONObject arr = obj.getJSONArray("tuc").getJSONObject(0).getJSONObject("phrase");
+				result = arr.getString("text");
+				} catch (Exception e) {
+					result = "";
 				}
-			};
-			observer.startWatching();
+				
+				return result;
+			} catch (Exception e) {
+				Log.i("my-error", "Goof: " + e.getMessage());
+				e.printStackTrace();
+			}
+			return null;
 		}
+		
+		@Override
+		protected void onPostExecute(String result) {
+			super.onPostExecute(result);
+		}
+	}
+	
+	private static String convertStreamToString(InputStream is) {
+	    /*
+	     * To convert the InputStream to String we use the BufferedReader.readLine()
+	     * method. We iterate until the BufferedReader return null which means
+	     * there's no more data to read. Each line will appended to a StringBuilder
+	     * and returned as String.
+	     */
+	    BufferedReader reader = new BufferedReader(new InputStreamReader(is));
+	    StringBuilder sb = new StringBuilder();
+
+	    String line = null;
+	    try {
+	        while ((line = reader.readLine()) != null) {
+	            sb.append(line + "\n");
+	        }
+	    } catch (IOException e) {
+	        e.printStackTrace();
+	    } finally {
+	        try {
+	            is.close();
+	        } catch (IOException e) {
+	            e.printStackTrace();
+	        }
+	    }
+	    return sb.toString();
 	}
 	
 	/*
